@@ -1,0 +1,28 @@
+#+title: ¿Como obtener ayuda?
+
+* ¿Como hacer preguntas para el Laboratorio y Ayudantías de Sistemas Operativos?
+
+Por la naturaleza de la clase (remota), la comunicación asíncrona puede ser tediosa y frustrante si no seguimos las siguientes recomendaciones al momento de hacer una pregunta en cualquiera de los canales de comunicación disponibles.
+
+1. En caso de que su código este lanzando errores. Deben de subir el código a un Pull Request de Github para que podamos entender exactamente que esta haciendo su código.
+
+2. Agregar las respuestas a la siguientes preguntas:
+   a. ¿Que entiende es la causa del error que les aparece? ¿Que significa el error que aparece en la Terminal?
+
+   b. ¿Que les regresa Google o ChatGPT como la causa del error?
+
+   c. ¿Que han intentando ustedes para solucionar el error?
+
+En caso de que nos hagan una pregunta sin esta información, vamos a requerir como primer paso siempre nos pasen las respuestas a estas preguntas. Esta bien el responder la primera pregunta con un "no se".
+
+* Recomendaciones para debugguear su código
+
+Cada vez que se estanquen en algún problema la recomendación es que ustedes usen el método científico para encontrar la solución:
+
+1. Observación: Obtengan el mensaje de error o alguna señal que indique hay algún error en su código.
+
+2. Hipótesis: En caso de que algo falle, primero intenten hacer un listado de las posibles causas del error.
+
+3. Experimentación: ¿Que cambios deben de implementar para probar o desechar su hipótesis?
+
+4. Conclusión: ¿Funciono la solución propuesta? En caso de no ser así, entonces regresar al primer paso.
