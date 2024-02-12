@@ -1,0 +1,20 @@
+* Lineamientos de Entrega
+** Reglas de Entrega
+
+- Las prácticas y proyectos serán elaborados en equipos de 2 personas, a menos que la práctica o proyecto en cuestión indiquen otra cosa.
+- Las prácticas y proyectos serán siempre publicados dentro del sitio del curso dentro de la plataforma *Google Classroom*.
+- Las fechas de entrega son estrictas. Por cada día de retraso se penalizará un 10% la calificación. El máximo número de días de retraso admitido es tres; una vez publicada la solución ya no se será válida la entrega.
+- La hora máxima de entrega de cada día de entrega es 23:59:59
+- Las prácticas y proyectos serán siempre entregados por medio del sitio del curso en el sitio *Google Classroom* a menos que la práctica o proyecto en cuestión indique otra cosa.
+- Las preguntas y observaciones sobre todas las prácticas y proyectos deberán ser hechas por medio del grupo de Google designado para este curso y sólo en situaciones muy particulares podrán ser contestadas de manera personal, pues la idea es que las dudas y observaciones sean públicas para que sean útiles para todos.
+
+** Formato de Entrega
+
+En *Google Classroom* agrega el enlace del _Pull Request_ que contiene tu solución y en donde se deben de observar los resultados de *Github Actions* al correr las pruebas. También marca la tarea como entregada en *Google Classroom*.
+
+
+** Notas Adicinales
+
+- Cualquier situación de copia detectada será de inmediato notificada al profesor titular del grupo para que él tome las medidas pertinentes según las reglas del curso.
+- Sólo es posible reclamar calificaciones de prácticas que fueron entregadas por medio de *Google Classroom*.
+- Cualquier retraso en la entrega de prácticas ocasionado por una situación excepcional, tendrá que ser notificado previo al hard deadline de la práctica en cuestión.
