@@ -1,0 +1,70 @@
+#+title: Docker Intro
+
+* ¿Que es docker y para que lo utilizamos?
+
+Docker es la abstracción que se construyo alrededor de las capacidades del Kernel de Linux que nos proporciona una manera fácil para empacar (imágenes) y ejecutar aplicaciones (contenedores) en ambientes relativamente aislados.
+
+** Docker daemon
+
+También conocido como ~dockerd~. Es el servidor que administra los contenedores y sus recursos (network, imagenes, volumenes, permisos).
+
+** Docker client
+
+El cliente ~docker~ es el programa con el que interactúan los usuarios de ~dockerd~.
+
+** Docker images
+
+Una imagen de docker, es un archivo comprimido que contiene todos archivos necesarios para correr la aplicación que esta igualmente empaquetada en el archivo.
+
+#+begin_src bash
+  docker images
+#+end_src
+
+** Docker containers
+
+Un contenedor es una imagen actualmente siendo ejecutada por ~dockerd~. Cada imagen tiene un ~hash~ único que se comparte de manera global en el ~host~. Sin embargo, es posible tener varios contenedores ejecutándose a partir de la misma imagen.
+
+#+begin_src bash
+  docker ps -a
+#+end_src
+
+*** Docker registries
+
+Un ~docker registry~ es un servidor que guarda y comparte imágenes de docker. Por ejemplo ~Docker Hub~ es el repositorio de imágenes publico que utiliza docker.
+
+*** Preguntas
+
+#+begin_src bash
+  docker run -i -t debian /bin/bash
+#+end_src
+
+1. ¿Cual es la salida de ~uname -a~ dentro de un contenedor con debian?
+
+2. ¿Que sucede si inicializo 2 contenedores de ~debian~ y ejecuto ~touch README.md~?
+
+* ¿Como puedo crear mis propias imágenes de docker?
+
+Utilizamos ~Dockerfile~ para especificar los pasos para construir nuevas imágenes de docker
+
+#+begin_src Dockerfile
+FROM python:3.7-alpine
+
+WORKDIR /code
+
+ENV VIRTUAL_ENV=/code/venv
+ENV PATH="$VIRTUAL_ENV/bin:$PATH"
+ENV FLASK_APP=app.py
+ENV FLASK_RUN_HOST=0.0.0.0
+
+RUN apk add --no-cache gcc musl-dev linux-headers
+
+EXPOSE 5000
+#+end_src
+
+#+begin_src bash
+  docker build --tag python-docker .
+#+end_src
+
+* Enlances
+
+1. https://docs.docker.com/get-started/overview/

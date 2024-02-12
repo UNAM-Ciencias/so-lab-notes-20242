@@ -1,0 +1,91 @@
+#+title: Intro To C
+* Ejercicio 03: Introducción a C
+** Aspectos importantes de C
+*** ¿Cual es la diferencia entre Stack y Heap?
+
+https://www.baeldung.com/cs/memory-stack-vs-heap
+
+Stack es un pedazo de memoria que tiene asignado cada thread de ejecución que se ocupa para ejecutar cada función.
+
+Heap son varios pedazos de memoria que se crean de manera dinámica y bajo demanda.
+
+*** C solo soporta paso por valor, NO paso por referencia.
+
+Simulamos el paso por referencia a través de apuntadores.
+
+#+begin_src C
+  #include <stdio.h>
+  #include <stdlib.h>
+
+  struct person {
+    int age;
+    char* name;
+  };
+
+  struct person* aux() {
+
+    // Variable en stack
+    struct person student1;
+
+    student1.name = "Pablo";
+
+    // La variable student2 es parte del stack, pero la memoria de heap que asignamos
+    // usando malloc vive en el heap. Por lo que los valores de student2 seguiran viviendo
+    // aun despues de que aux termine su ejecucion.
+    struct person* student2 = (struct person*) malloc(sizeof(struct person));
+
+    struct person* students = (struct person*) malloc(4 * sizeof(struct person));
+
+    student2->name = "Pedro";
+
+    students[0].name = "Pedro";
+    students[1].name = "Juan";
+
+    printf("-- student1 name: %s\n", student1.name);
+    printf("-- student2 name: %s\n", student2->name);
+
+    printf("-- students[0] name: %s\n", students[0].name);
+    printf("-- students[1] name: %s\n", students[1].name);
+
+    printf("-- students[0] name: %d\n"  students->age);
+
+    return students;
+  }
+
+  int main() {
+    struct person* students = aux();
+
+    students->name;
+
+    printf("-- STUDENTS[0] name: %s\n", students->name);
+  }
+#+end_src
+** Introducción a C
+*** ¿Como ejecutan las pruebas en su maquina local?
+#+begin_src bash
+  ./docker-open-terminal
+  make clean
+  make
+#+end_src
+
+*** ¿Que archivos tengo que modificar?
+- ~src/connect4.h~: Solo tienen que modificar ~struct connect4_board~ (depende de ~connect4_init~)
+- ~src/connect4.c~
+*** Pasos para entregar la practica
+
+1. Crear un nuevo rama con el nombre ~feedback~.
+   #+begin_src bash
+     git branch feedback
+   #+end_src
+
+2. Deben de trabajar todos los cambios que haga en la rama ~feedback~.
+   #+begin_src bash
+     git checkout feedback
+   #+end_src
+
+3. Hacer push de la rama ~feedback~
+   #+begin_src bash
+     git push origin feedback
+   #+end_src
+
+4. Crear un nuevo Pull Request, en donde base sea la rama ~main~ y compare sea la rama ~feedback~.
