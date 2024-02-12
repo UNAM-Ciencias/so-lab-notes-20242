@@ -1,0 +1,12 @@
+#+title: Tips
+* ¿Que pasos debería seguir para responder las prácticas?
+
+Después de haber leído y entendido el objetivo de la práctica.
+
+1) Escribir en español (en hoja de papel o en un bloc de notas) los pasos que debe contener la solución.
+
+2) Identificar las secciones del código de la practica que creen deben de modificar.
+
+3) Agregar pseudocódigo (pueden ser palabras en español) con los cambios que están proponiendo hacer.
+
+4) Traducir el pseudocódigo a código de C
