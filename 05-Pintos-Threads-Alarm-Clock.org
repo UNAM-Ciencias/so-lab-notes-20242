@@ -1,0 +1,127 @@
+#+title: Practica 01: Pintos - Alarm Clock
+
+* Objectivo de la Práctica
+
+Implementar la lista de espera de un dispositivo de hardware llamado ~timer~.
+
+* Threads
+
+Archivos de referencia:
+~src/threads/init.c~
+~src/threads/thread.h~
+~src/threads/thread.c~
+
+1. ~threads/init.c~ continene la función ~main~ que inicializa PintOS.
+2. ~thread_init(void)~ inicializa el sistema de threads en Pintos.
+3. ~static struct lock tid_lock;~ lock que se ocupa para para la función ~allocate_tid()~.
+4. ~init_thread~ Asigna los valores al thread que se le pase.
+5. ~allocate_tid()~ genera un identificador único para un thread.
+6. ~static struct list ready_list~ lista de procesos que el ~scheduler~ de Pintos puede escoger para que se ejecute.
+7. ~struct thread~ representa el PCB de Pintos.
+8. ~thread_block()~ pasa un proceso de estado ~THREAD_RUNNING~ a estado ~THREAD_BLOCKED~.
+9. ~thread_unblock()~ pasa un proceso de estado ~THREAD_BLOCKED~ a estado ~THREAD_READY~.
+
+* Interrupciones
+** Definición
+Una interrupción es una señal emitida por el hardware o software cuando un proceso o un evento necesita atención inmediata.
+
+** Timer interrupt
+Archivos de referencia:
+~src/devices/timer.h~
+~src/devices/timer.c~
+
+1. ~timer_interrupt~ La función que ejecuta Pintos cuando el hardware envia una interrupción de tiempo.
+2. ~static int64_t ticks~ contador global que guarda el numero de ticks desde que se inicializo Pintos.
+3. ~thread_tick(void)~ incrementa el numero de ticks que el thread actual lleva ejecutando y en caso de llevar más de lo permitido, se invoca al scheduler para que otro thread entre en ejecución.
+4. ~timer_sleep~ system call que llama un thread para ponerse a dormir.
+
+* Estructuras de datos basica de Pintos: double linked list
+Lista tradicional:
+[[https://www.geeksforgeeks.org/data-structures/linked-list/][Linked List Data Structure - GeeksforGeeks]]
+
+~src/lib/kernel/list.c~
+~src/lib/kernel/list.h~
+
+Ejemplo en Linux:
+[[https://lwn.net/Articles/175432/][Trees I: Radix trees {LWN.net}]]
+
+* ¿Qué se espera de esta práctica?
+Cambiar la implementación de ~timer_sleep~ por una que no desperdicie el uso del procesador (busy_wait).
+
+* Pruebas
+** ¿Qué pruebas se ejecutan para esta práctica?
+execute-tests-alarm-clock
+
+** ¿Como se ejecutan las pruebas?
+#+begin_src bash
+  ./docker-open-terminal
+  cd src/threads
+
+  make # make clean para forzar a que se recompile todo otra vez.
+  ./execute-tests-alarm-clock
+#+end_src
+* Consejos
+** ¿Que pasos debería seguir para responder la practica?
+Después de haber leído y entendido el objetivo de la practica.
+
+1) Escribir en español (en hoja de papel o en un bloc de notas) los pasos que debe contener la solución.
+
+2) Identificar las secciones del código de la practica que creen deben de modificar.
+
+3) Agregar pseudocódigo (pueden ser palabras en español) con los cambios que están proponiendo hacer.
+
+4) Traducir el pseudocódigo a código de C
+
+** ¿Como debugguear el código?
+En cualquier lenguaje de programación, le herramienta más importante que tenemos para saber que esta sucediendo con nuestro programa es imprimir mensajes en la Terminal.
+
+*** Imprime un ~string~ que sea fácil de encontrar y reconocer.
+  #+begin_src c
+    printf("-------");
+  #+end_src
+*** En caso de que impriman multiples ~strings~, agreguen un contador para identificar donde esta el error.
+
+  #+begin_src c
+    printf("1. -------");
+    ......
+    printf("2. -------");
+  #+end_src
+*** ¿Que sucede si un ~string~ no aparece en la terminal?
+Es casi seguro que su programa falla antes o se queda atorado en alguna condición que impide ejectuar ~printf()~.
+
+*** ¿Que sucede si un ~string~ aparece de manera interminable en la terminal?
+Muy probablemente su código este en un ciclo infinito que no cumple con la condición de salida.
+
+** ¿Por que mis pruebas fallan?
+*** Lean el código de las pruebas (no siempre es posible)
+- Van a leer más código de C, y por lo tanto van aprender más sobre el lenguaje.
+*** Googlear los errores que se impriman en la consola
+*** ¿Como disminuir el tiempo que toma debuggear?
+- Antes de correr las pruebas o entregar la práctica. Revisen los cambios que hicieron.
+  #+begin_src bash
+    $ git status
+  #+end_src
+
+- Creen un commit cuando crean que su código esta mejorando (incluso si no pasan todas las pruebas solicitadas).
+  #+begin_src bash
+    $ git add .
+    $ git commit -m "Descripción con los cambios que implemente."
+  #+end_src
+
+- ~IMPORTANTE~ A mano escriban los cambios de las estructuras y/o las funciones que van a modificar, esto les ayudará a aclara cualquier caso importante que su código debe de cubrir.
+
+*** En caso de que todo lo anterior falle, publiquen sus preguntas en Slack
+**** ¿Como hacer preguntas para el Laboratorio de Sistemas Operativos?
+
+Por la naturaleza de la clase (remota), la comunicación asíncrona puede ser tediosa y frustrante si no seguimos las siguientes recomendaciones al momento de hacer una pregunta en cualquiera de los canales de comunicación disponibles.
+
+1. En caso de que su código este lanzando errores. Deben de subir el código a un Pull Request de Github para que podamos entender exactamente que esta haciendo su código.
+
+2. Agregar las respuestas a la siguientes preguntas:
+   a. ¿Que entiende es la causa del error que les aparece? ¿Que significa el error que aparece en la Terminal?
+
+   b. ¿Que les regresa Google o ChatGPT como la causa del error?
+
+   c. ¿Que han intentando ustedes para solucionar el error?
+
+En caso de que nos hagan una pregunta sin esta información, vamos a requerir como primer paso siempre nos pasen las respuestas a estas preguntas. Esta bien el responder la primera pregunta con un "no se".
