@@ -1,0 +1,322 @@
+#+title: Practica 03: Pintos - Process Control System Calls
+
+* Pintos: Métodos de sincronización de procesos.
+
+Pintos es un sistema operativo hecho para un microprocesador con el conjunto de instrucciones de Intel [[https://web.stanford.edu/~ouster/cgi-bin/cs140-spring20/pintos/pintos_13.html#IA32-v1][IA32]]. A pesar de que estos microprocesadores solo tiene un CPU, Pintos requiere tener mecanismos para sincronizar los procesos que ejecuta, pues paralelismo requiere mas de un procesador, mientras que concurrencia se puede dar con un solo procesador.
+
+** ¿En que momento nos importan esos mecanismos de sincronización?
+
+Cuando 2 procesos diferentes acceden y modifican recursos compartidos (shared memory), para los cuales se puede causar una inconsistencia.
+
+Por ejemplo, en el problema clásico de productor y consumidor.
+Tenemos dos procesos en donde uno produce (proceso productor) nuevos elementos que otro proceso consume (proceso consumidor). Ambos procesos deben de coordinar el paso de estos elementos a través de un recurso compartido. En el siguiente ejemplo ese recurso es un ~buffer~.
+
+Proceso Productor:
+#+begin_src c
+  while (true) {
+    /* produce an item in next_produced*/
+
+    while (counter == BUFFER_SIZE) // We cannot add more elements if the buffer is full
+      ; /* do nothing. */
+
+    buffer[in] = next_produced;
+    in = (in + 1) % BUFFER_SIZE;
+    counter++; // Critical resource shared between both processes
+  }
+#+end_src
+
+Proceso consumidor:
+#+begin_src c
+  while (true) {
+    while (counter == 0)
+      ; /* do nothing */
+
+    next_consumed = buffer[out];
+    out = (out + 1) % BUFFER_SIZE;
+    counter--; // Critical resource shared between both processes
+  }
+#+end_src
+
+Para este  problema clásico la solución debe de garantizar:
+
+1. Exclusión Mutua: Si el proceso *P_i* esta ejecutando una sección critica de código, ningún otro proceso puede estar ejecutando su sección critica.
+
+2. Progreso: Si ningún proceso esta ejecutando su sección critica. Y en algún momento un conjunto procesos quiere entrar a su sección critica. Solo esos procesos puede participar en el método se selección y esta selección no puede ser post puesta de manera indefinida.
+
+3. Espera limitada (Bounded waiting): Debe de existir un limite para el numero de veces que otro proceso va a pedir entrar a su sección critica antes de que el permiso sea otorgado.
+
+
+Para este problema, en sistemas operativos tenemos las siguiente estructuras que nos permiten resolver este problema de sincronización entre dos procesos.
+El análisis de estas estructuras se hace sobre el código de Pintos.
+
+** Sema
+
+La estructura base para el resto (lock y cond).
+La definicion es la siguiente:
+
+#+begin_src c
+  struct semaphore
+  {
+    unsigned value;             /* Current value. */
+    struct list waiters;        /* List of waiting threads. */
+  };
+#+end_src
+
+En donde ~value~ contiene el numero de procesos que pueden ejecutar su sección critica al mismo tiempo. En el caso del problema consumidor y productor, el valor es uno.
+
+Las operaciones básicas para esta estructura son:
+
+#+begin_src c
+    /* Down or "P" operation on a semaphore.  Waits for SEMA's value
+     to become positive and then atomically decrements it.
+
+     This function may sleep, so it must not be called within an
+     interrupt handler.  This function may be called with
+     interrupts disabled, but if it sleeps then the next scheduled
+     thread will probably turn interrupts back on. */
+  void
+  sema_down (struct semaphore *sema) // Wait
+  {
+    enum intr_level old_level;
+
+    ASSERT (sema != NULL);
+    ASSERT (!intr_context ());
+
+    old_level = intr_disable ();
+    while (sema->value == 0)
+      {
+	list_push_back (&sema->waiters, &thread_current ()->elem);
+	thread_block ();
+	//// No va a continuar.
+      }
+    sema->value--;
+    intr_set_level (old_level);
+  }
+
+  /* Down or "P" operation on a semaphore, but only if the
+     semaphore is not already 0.  Returns true if the semaphore is
+     decremented, false otherwise.
+
+     This function may be called from an interrupt handler. */
+  bool
+  sema_try_down (struct semaphore *sema)
+  {
+    enum intr_level old_level;
+    bool success;
+
+    ASSERT (sema != NULL);
+
+    old_level = intr_disable ();
+    if (sema->value > 0)
+      {
+	sema->value--;
+	success = true;
+      }
+    else
+      success = false;
+    intr_set_level (old_level);
+
+    return success;
+  }
+
+  /* Up or "V" operation on a semaphore.  Increments SEMA's value
+     and wakes up one thread of those waiting for SEMA, if any.
+
+     This function may be called from an interrupt handler. */
+  void
+  sema_up (struct semaphore *sema) // Signal
+  {
+    enum intr_level old_level;
+
+    ASSERT (sema != NULL);
+
+    old_level = intr_disable ();
+    if (!list_empty (&sema->waiters))
+      thread_unblock (list_entry (list_pop_front (&sema->waiters),
+				  struct thread, elem));
+    sema->value++;
+    intr_set_level (old_level);
+  }
+#+end_src
+
+
+La solución entonces para el problema del consumidor usando semáforos es:
+
+Inicializamos 3 semáforos:
+#+begin_src c
+  sema_init(&buffer_in_used, 1);
+
+  sema_init(&buffer_full, 0);
+  sema_init(&buffer_empty, BUFFER_SIZE);
+#+end_src
+
+
+Proceso Productor:
+#+begin_src c
+  while (true) {
+    /* produce an item in next_produced*/
+    sema_down(&buffer_empty);
+    sema_down(&buffer_in_used);
+
+    buffer[in] = next_produced;
+    in = (in + 1) % BUFFER_SIZE;
+    counter++;
+
+    sema_up(&buffer_in_used);
+    sema_up(&buffer_full);
+  }
+#+end_src
+
+Proceso consumidor:
+#+begin_src c
+  while (true) {
+    sema_down(&buffer_full);
+    sema_down(&buffer_in_used);
+
+    next_consumed = buffer[out];
+    out = (out + 1) % BUFFER_SIZE;
+    counter--;
+
+    sema_up(&buffer_in_used);
+    sema_up(&buffer_empty);
+  }
+#+end_src
+
+** Lock
+
+Lock es una estructura de datos que se construye usando los semáforos en Pintos.
+
+La definición de la estructura es:
+
+#+begin_src c
+  struct lock
+  {
+    struct thread *holder;      /* Thread holding lock (for debugging). */
+    struct semaphore semaphore; /* Binary semaphore controlling access. */
+  };
+#+end_src
+
+Las funciones básicas de lock son:
+
+#+begin_src c
+  /* Acquires LOCK, sleeping until it becomes available if
+       necessary.  The lock must not already be held by the current
+       thread.
+
+       This function may sleep, so it must not be called within an
+       interrupt handler.  This function may be called with
+       interrupts disabled, but interrupts will be turned back on if
+       we need to sleep. */
+    void
+    lock_acquire (struct lock *lock)
+    {
+      ASSERT (lock != NULL);
+      ASSERT (!intr_context ());
+      ASSERT (!lock_held_by_current_thread (lock));
+
+      sema_down (&lock->semaphore);
+      lock->holder = thread_current ();
+    }
+
+    /* Tries to acquires LOCK and returns true if successful or false
+     on failure.  The lock must not already be held by the current
+     thread.
+
+     This function will not sleep, so it may be called within an
+     interrupt handler. */
+  bool
+  lock_try_acquire (struct lock *lock)
+  {
+    bool success;
+
+    ASSERT (lock != NULL);
+    ASSERT (!lock_held_by_current_thread (lock));
+
+    success = sema_try_down (&lock->semaphore);
+    if (success)
+      lock->holder = thread_current ();
+    return success;
+  }
+
+  /* Releases LOCK, which must be owned by the current thread.
+
+     An interrupt handler cannot acquire a lock, so it does not
+     make sense to try to release a lock within an interrupt
+     handler. */
+  void
+  lock_release (struct lock *lock)
+  {
+    ASSERT (lock != NULL);
+    ASSERT (lock_held_by_current_thread (lock));
+
+    lock->holder = NULL;
+    sema_up (&lock->semaphore);
+  }
+#+end_src
+
+** Monitores (Cond en Pintos)
+
+Los monitores son construcciones mas complejas. Estas se ocupan ocupar un semáforo ya no es suficiente cuando el recurso compartido (la sección critica) depende de mas de una condición.
+
+En Pintos también tenemos esta estructura disponible. Sin embargo, para efectos prácticos no los vamos a estudiar con detenimiento por que no son necesarios para resolver las practicas.
+
+* Pintos: Ejemplo de sincronización de procesos en el código de Pintos
+
+#+begin_src c
+  /* Starts preemptive thread scheduling by enabling interrupts.
+     Also creates the idle thread. */
+  void
+  thread_start (void)
+  {
+    /* Create the idle thread. */
+    struct semaphore idle_started;
+    sema_init (&idle_started, 0);
+    thread_create ("idle", PRI_MIN, idle, &idle_started);
+
+    /* Start preemptive thread scheduling. */
+    intr_enable ();
+
+    /* Wait for the idle thread to initialize idle_thread. */
+    sema_down (&idle_started);
+  }
+
+
+  /* Idle thread.  Executes when no other thread is ready to run.
+
+   The idle thread is initially put on the ready list by
+   thread_start().  It will be scheduled once initially, at which
+   point it initializes idle_thread, "up"s the semaphore passed
+   to it to enable thread_start() to continue, and immediately
+   blocks.  After that, the idle thread never appears in the
+   ready list.  It is returned by next_thread_to_run() as a
+   special case when the ready list is empty. */
+static void
+idle (void *idle_started_ UNUSED)
+{
+  struct semaphore *idle_started = idle_started_;
+  idle_thread = thread_current ();
+  sema_up (idle_started);
+
+  for (;;)
+    {
+      /* Let someone else run. */
+      intr_disable ();
+      thread_block ();
+
+      /* Re-enable interrupts and wait for the next one.
+
+         The `sti' instruction disables interrupts until the
+         completion of the next instruction, so these two
+         instructions are executed atomically.  This atomicity is
+         important; otherwise, an interrupt could be handled
+         between re-enabling interrupts and waiting for the next
+         one to occur, wasting as much as one clock tick worth of
+         time.
+
+         See [IA32-v2a] "HLT", [IA32-v2b] "STI", and [IA32-v3a]
+         7.11.1 "HLT Instruction". */
+      asm volatile ("sti; hlt" : : : "memory");
+    }
+}
+
+#+end_src
