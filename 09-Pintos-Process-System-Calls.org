@@ -1,0 +1,182 @@
+#+title: Practica 04: Pintos - Process Control System Calls
+
+* Objetivo de la Práctica 04
+Implementar las llamadas al sistema (/syscalls/ o /system calls/) *exec*, *wait* y *exit*.
+
+* Proyecto 02 de Pintos: User Programs
+
+En el primer proyecto de Pintos, la meta era implementar un sistema de _threads_ y siempre trabajamos en modo Kernel.
+
+En esta práctica comenzamos con el segundo proyecto de Pintos (_User Programs_).
+La principal diferencia entre el proyecto uno (Threads) y el proyecto dos (User Programs) de Pintos, es que en Threads solo trabajamos en modo kernel, mientras que por seguridad, para implementar User Programs, se separan las operaciones en user-mode y kernel-mode.
+
+Para ello necesitamos revisar el diseño de Pintos para los procesos de usuario.
+
+* User programs
+
+Cuando la bandera *USERPROG* esta prendida en tiempo de compilación, la definición de un _thread_ contiene un apuntador ~uint32_t *pagedir~ hacia un proceso de usuario.
+
+En Pintos los procesos están mapeados uno a uno con los threads, es decir, cada proceso le pertenece a un thread. Esto se hace para simplificar la implementación del sistema operativo, sin embargo esto no es común.
+
+* ¿Como funcionan las llamadas al sistema en Pintos?
+
+Durante la inicialización de Pintos se llama la función ~syscall_init~.
+
+src/userprog/syscall.c
+
+#+begin_src c
+  void
+  syscall_init (void)
+  {
+    intr_register_int (0x30, 3, INTR_ON, syscall_handler, "syscall");
+  }
+#+end_src
+
+En donde:
+
+- ~0x30~: Es la entrada en la tabla de interrupciones con el que registramos las _syscalls_.
+- ~3:~ El nivel con el que se le permite llamar a las interrupciones, en este caso, le estamos dando permiso a los procesos que corren en el nivel 3 (user programs) para invocar estas interrupciones.
+- ~INTR_ON~: En nivel de interrupciones con el que se va a llamar al syscalls.
+- ~syscall_handler~: La función que se va a ejecutar al llamar la interrupción
+- ~"syscall"~: El nombre de la interrupción para permitir debuguear al desarrollador.
+
+* ¿Como se le pasan los parámetros a un syscall?
+
+Dado que las _syscalls_ se implementan utilizando interrupciones de software, la comunicación se hace utilizando la estructura ~struct intr_frame~.
+
+src/threads/interrupt.h
+
+Cada vez que ocurre una interrupción se cambian los valores del ~intr_frame~ y la interrupción en cuestión tiene acceso a dicha estructura.
+
+src/lib/syscall-nr.h
+
+* ¿Donde estan implementadas las interrupciones de syscalls?
+
+src/userprog/syscall.c
+
+* ¿Como se manejan las interrupciones en Pintos?
+
+~src/userprog/syscall.c~
+
+Revisión de las funciones:
+#+begin_src c
+  static void syscall_handler (struct intr_frame *);
+  static void exit_wrapper (int32_t *esp);
+  static void exit (int exit_status);
+#+end_src
+
+* ¿Cuales son las funciones de Pintos referentes a un proceso?
+
+~src/userprog/process.c~
+Revisión de las funciones:
+
+#+begin_src c
+  tid_t process_execute (const char *file_name);
+  static void start_process (void *file_name_);
+  static bool load (const char *cmdline,
+		    void (**eip) (void),
+		    void **esp);
+
+  int process_wait (tid_t child_tid UNUSED);
+  void process_exit (void);
+  void process_activate (void)
+#+end_src
+
+* ¿Cuáles son las especificaciones de ~exec~?
+
+~int exec(const char* cmd)~
+
+Ejecuta el programa cuyo nombre se encuentra contenido en la cadena ~CMD~, la cual también contiene los argumentos separados por espacios.
+
+La llamada debe regresar el identificador de proceso, en caso de
+que el programa se haya cargado correctamente, en caso contrario regresa -1. El proceso que ejecuta la llamada no debe continuar hasta que conoce el estado de carga del proceso hijo, por lo cual, es necesario sincronizar ambos procesos.
+
+* ¿Cuáles son las especificaciones de ~wait~?
+
+~int wait(int pid)~
+
+El proceso que invoca la llamada se bloquea (semáforos) hasta que el proceso identificado con el identificado de proceso PID termina su ejecución.
+
+El proceso PID debe ser un proceso creado con la llamada exec por el
+proceso que invoca wait (pid debe ser hijo del proceso actual).
+El valor de retorno de ~wait~ debe ser el valor con el que el proceso PID terminó.
+
+Si el proceso PID terminó su ejecución antes de la llamada wait, el proceso padre no se bloquea pero debe recibir el valor de salida.
+
+La llamada ~wait~ solo tiene efecto en hijos directos y si se invoca mas de una vez sobre el mismo PID las llamadas subsecuentes no deben bloquear al proceso y deben regresar -1.
+
+* ¿Cuáles son las especificaciones de ~exit~?
+
+~void exit(int status)~
+
+Termina el proceso actual de usuario, regresando su status al hilo de Kernel que tiene asociado.
+
+#+begin_src c
+  printf ( " % s : exit (% d ) \ n " , name , status ) ;
+#+end_src
+
+* TIPS
+** Recomendaciones para debuguear su código
+*** Imprime un ~string~ que sea fácil de encontrar y reconocer.
+  #+begin_src c
+    printf("-------");
+  #+end_src
+*** En caso de que impriman multiples ~strings~, agreguen un contador para identificar donde esta el error.
+
+  #+begin_src c
+    printf("1. -------");
+    ......
+    printf("2. -------");
+*** ¿Que sucede si un ~string~ no aparece en la terminal?
+Es casi seguro que su programa falla antes o se queda atorado en alguna condición que impide ejecutar ~printf()~.
+
+Revisen su implementación con los semáforos. ¿Cuando se inicializan? ¿Con que valores? ¿Cuando usan ~sema_up~ y ~sema_down~? ¿Cuantos semáforos utiliza su implementación?
+
+*** ¿Que sucede si un ~string~ aparece de manera interminable en la terminal?
+Muy probablemente su código este en un ciclo infinito que no cumple con la condición de salida.
+** ¿Por que mis pruebas fallan?
+*** Lean la descripción de la prueba
+*** Googlear los errores que se impriman en la consola
+*** ¿Como se lee el backtrace de Pintos?
+
+#+begin_src bash
+  pintos -v -k -T 60 --qemu  --filesys-size=2 -p tests/userprog/exit -a exit -- -q  -f run exit < /dev/null 2> tests/userprog/exit.errors > tests/userprog/exit.output
+  perl -I../.. ../../tests/userprog/exit.ck tests/userprog/exit tests/userprog/exit.result
+  FAIL tests/userprog/exit
+  Kernel panic in run: PANIC at ../../threads/vaddr.h:84 in vtop(): assertion `is_kernel_vaddr (vaddr)' failed.
+  Call stack: 0xc002c336 0xc002fa50 0xc00303de 0xc002f2e3 0xc0021e36 0xc0021faf 0xc002178a 0xc0023b80 0xc0023f43 0xc0021ff6 0xc0020d2b 0xc00203c8
+  Translation of call stack:
+  0xc002c336: debug_panic (.../../lib/kernel/debug.c:38)
+  0xc002fa50: vtop (.../../../threads/vaddr.h:86)
+  0xc00303de: pagedir_activate (...../userprog/pagedir.c:230)
+  0xc002f2e3: process_activate (...../userprog/process.c:133)
+  0xc0021e36: thread_schedule_tail (..../../threads/thread.c:725)
+  0xc0021faf: schedule (..../../threads/thread.c:753)
+  0xc002178a: thread_yield (..../../threads/thread.c:457)
+  0xc0023b80: sema_up (...../../threads/synch.c:129)
+  0xc0023f43: lock_release (...../../threads/synch.c:244)
+  0xc0021ff6: allocate_tid (..../../threads/thread.c:766)
+  0xc0020d2b: thread_init (..../../threads/thread.c:132)
+  0xc00203c8: main (...d/../../threads/init.c:91)
+#+end_src
+
+*** ¿Como disminuir el tiempo que toma debuggear?
+- Antes de correr las pruebas o entregar la práctica. Revisen los cambios que hicieron.
+  #+begin_src bash
+    $ git status
+    $ git diff
+  #+end_src
+
+- Creen un commit cuando crean que su código esta mejorando (incluso si no pasan todas las pruebas solicitadas).
+  #+begin_src bash
+    $ git add .
+    $ git commit -m "Descripción con los cambios que implemente."
+  #+end_src
+
+- ~IMPORTANTE~ A mano escriban los cambios de las estructuras y/o las funciones que van a modificar, esto les ayudará a aclara cualquier caso importante que su código debe de cubrir.
+
+*** En caso de que todo lo anterior falle, publiquen sus preguntas en Slack
+Idealmente incluyan:
+- Un link hacia Github con el codigo que han implementado.
+- Que han intentado para resolver el problema.
+- Que entienden es la causa del problema.

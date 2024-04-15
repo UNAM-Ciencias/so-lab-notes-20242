@@ -1,4 +1,4 @@
-#+title: Practica 03: Pintos - Process Control System Calls
+#+title: Practica 04: Pintos - Process Control System Calls
 
 * Pintos: Métodos de sincronización de procesos.
 
