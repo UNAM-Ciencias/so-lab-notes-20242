@@ -1,0 +1,409 @@
+#+title: Practica 04: Pintos - Process Control System Calls
+
+* Pintos: Implementación de la llamada ~exit~
+
+#+begin_quote
+NOTA: El campo exit_status que se ocupa para resolver este system call debe ser luego intercambiado por el struct process.
+#+end_quote
+
+Recordemos que la especificación es la siguiente:
+
+#+begin_quote
+Termina el proceso actual de usuario, regresando su status al hilo de Kernel que tiene asociado.
+#+end_quote
+
+Además debe imprimir en la consola el código de salida con el siguiente formato:
+
+#+begin_src c
+  printf("%s: exit(%d)\n", name, exit_status);
+#+end_src
+
+** Implementación en la entrada en la función ~syscall_handler~
+
+Cuando hay una llamada al sistema (syscall), el paso de mensajes entre el modo usuario y el modo kernel se hace a través de interrupciones. La función que maneja las interrupciones de syscalls es ~syscall_handler~, que se encuentra en el archivo ~src/userprog/syscall.c~.
+
+Para ello agregamos un nuevo caso en el ~switch~ de la función:
+
+#+begin_src c
+  case SYS_EXIT: {
+    exit_wrapper (esp);
+    break;
+  }
+#+end_src
+
+Después agregamos las funciones en el mismo archivo:
+
+#+begin_src c
+  /* Write Syscall Implementation */
+  static void
+  exit_wrapper (int32_t *esp) {
+    int exit_status = get_user_int_or_fail ((uint32_t*) esp);
+    exit (exit_status);
+  }
+
+  static void
+  exit (int exit_status) {
+    process_set_exit_status(exit_status);
+    thread_exit ();
+  }
+#+end_src
+
+En donde ~exit_wrapper~ tiene como responsabilidad el obtener los parámetros del la memoria del proceso al que apunta el registro ~esp~.
+Mientras que ~exit~ tiene dos responsabilidades:
+
+1. Guardar el estatus de salida del proceso.
+2. Terminar el proceso usando ~thread_exit()~.
+
+** ¿En que momento persistimos el estatus de salida del proceso de usuario?
+
+En el código base que se les proporciono tenemos una estructura llamada ~process~. La cual esta diseñada para guardar la información (o datos) que se van a requerir para sincronizar y comunicar las llamadas ~exec~, ~wait~ y ~exit~.
+
+Por otro lado, dado que el estatus de salida corresponde a un ~thread~. Teniendo como resultado:
+
+#+begin_src c
+  #ifdef USERPROG
+      /* Owned by userprog/process.c. */
+      uint32_t *pagedir;                  /* Page directory. */
+      struct process* process_info;
+  #endif
+#+end_src
+
+Entonces la implementación de ~process_set_exit_status(exit_status)~ termina siendo:
+
+#+begin_src c
+  /* Sets the current thread's exit status to EXIT_STATUS. */
+  void
+  process_set_exit_status (int32_t exit_status)
+  {
+      struct process* current_process = thread_current()->process_info;
+      current_process->exit_status = exit_status;
+  }
+#+end_src
+
+Por último, en la función ~process_exit()~ ya se imprime el estado de salida del proceso que nos piden las pruebas. Sin embargo siempre usa cero como estatus, usando una función ~process_get_exit_status()~ podemos obtener el estatus previamente guardado e imprimirlo.
+
+#+begin_src c
+  /* Returns the current exit_status. */
+  int32_t
+  process_get_exit_status (void)
+  {
+   struct process* current_process = thread_current()->process_info;
+   return current_process->exit_status;
+
+  }
+
+  // Dentro de process_exit usamos:
+  int current_thread_exit_status = process_get_exit_status();
+  printf("%s: exit(%d)\n", cur->name, current_thread_exit_status);
+#+end_src
+
+Finalmente la inicialización de la estructura ~process~ se debe de hacer en dos momentos clave:
+1. Para el ~initial_thread~, el cual puede tener un ~struct process~ global. El cual vemos en la implementación de la llamada ~wait~.
+2. La creación de un nuevo thread en ~start_process~. En el momento en que se crea un nuevo proceso. La cual vamos a ver a continuación.
+
+* Implementación de la llama ~exec~
+
+Como recordatorio tenemos que la especificación de ~exec~ es:
+
+#+begin_quote
+Ejecuta el programa cuyo nombre se encuentra contenido en la cadena ~CMD~, la cual también contiene los argumentos separados por espacios.
+
+La llamada debe regresar el identificador de proceso, en caso de
+que el programa se haya cargado correctamente, en caso contrario regresa -1. El proceso que ejecuta la llamada no debe continuar hasta que conoce el estado de carga del proceso hijo, por lo cual, es necesario sincronizar ambos procesos.
+#+end_quote
+
+** Implementar la entrada a la función ~syscall_handler~.
+
+Agregamos una nueva entrada al ~switch~, de igual manera que en ~exit~.
+
+#+begin_src c
+  case SYS_EXEC: {
+    f->eax = exec_wrapper(esp);
+    break;
+  }
+#+end_src
+
+Y agregamos las funciones auxiliares:
+
+#+begin_src c
+  /* Exec Syscall Implementation */
+  static tid_t
+  exec_wrapper (int32_t *esp) {
+    char *cmd_line = (char*) get_user_int_or_fail ((uint32_t*) esp++);
+    return exec (cmd_line);
+  }
+
+  static tid_t
+  exec (char* cmd_line) {
+    return process_execute(cmd_line);
+  }
+#+end_src
+
+En donde ~exec_wrapper~ tiene como tarea el obtener el ~string~ llamado ~command line~ que el programa quiere ejecutar. Y ~exec~ regresa el tid del proceso creado, si y solo si, este se creo de manera correcta. En otro caso debe de regresar ~-1~.
+
+** ¿Cual seria entonces el flujo ideal para que el proceso hijo le notifique a su padre su estado?
+
+Como mencionamos en las clases anteriores, la coordinación entre dos o mas procesos se da usando semáforos.
+
+¿Que información necesitamos pasar entre proceso padre e hijo?
+
+Por un lado, hay que seguirle pasando el nombre del programa que va a ejecutar. Después necesitamos que el proceso padre sepa si el proceso hijo pudo cargar de manera correcta su programa. Y finalmente también el mecanismo de sincronización que es el semáforo.
+
+Para ello declaramos la estructura ~load_exec~ en el archivo ~src/userprog/process.c~:
+
+#+begin_src c
+  struct load_exec {
+    char* cmd_line;
+    struct semaphore started;
+    bool success
+    struct process* parent;
+  };
+#+end_src
+
+Ahora, ¿en que momento el proceso padre debe de obtener la notificación del proceso hijo sobre su estado?
+
+Esto se hace antes de que ~process_execute~ termine su ejecución:
+
+#+begin_src c
+    tid_t
+  process_execute (const char *file_name)
+  {
+    char *fn_copy;
+    tid_t tid;
+
+    /* Make a copy of FILE_NAME.
+       Otherwise there's a race between the caller and load(). */
+    fn_copy = palloc_get_page (0);
+    if (fn_copy == NULL)
+      return TID_ERROR;
+    strlcpy (fn_copy, file_name, PGSIZE);
+
+    struct load_exec load_exec;
+    load_exec.cmd_line = fn_copy;
+    load_exec.parent = thread_current()->process_info
+    sema_init(&load_exec.sema, 0);
+
+    /* Create a new thread to execute FILE_NAME. */
+    tid = thread_create (file_name, PRI_DEFAULT, start_process, &load_exec);
+    if (tid == TID_ERROR)
+      palloc_free_page (fn_copy);
+
+    sema_down(&load_exec.sema);
+
+    if (load_exec.success)
+      return tid;
+    else
+      return TID_ERROR;
+  }
+#+end_src
+
+Finalmente, ¿en que momento el proceso hijo debe de notificar al proceso padre que cargo de manera correcta el programa?
+
+Dentro de la función ~start_process~ que ahora recibe la estructura ~load_exec~ para guardar los 4 valores antes descritos (programa a ejecutar, semáforo, resultado de la carga del programa y el proceso padre).
+
+#+begin_src c
+/* A thread function that loads a user process and starts it
+   running. */
+static void
+start_process (void *load_exec_)
+{
+  struct load_exec* load_exec = load_exec_;
+
+  char *file_name = load_exec->cmd_line;
+  struct intr_frame if_;
+  bool success;
+
+  struct thread* current = thread_current ();
+  int tokens = str_tokenize (file_name, ' ');
+  strlcpy (current->name, file_name, sizeof current->name);
+
+  /* Initialize interrupt frame and load executable. */
+  memset (&if_, 0, sizeof if_);
+  if_.gs = if_.fs = if_.es = if_.ds = if_.ss = SEL_UDSEG;
+  if_.cs = SEL_UCSEG;
+  if_.eflags = FLAG_IF | FLAG_MBS;
+  success = load (file_name, &if_.eip, &if_.esp);
+
+  // Antes de hacer sema_up deben tambien guardar la relacion entre
+  // el padre e hijo. Esto de describe en la implementación de la llamada
+  // wait.
+  load_exec->success = success;
+  sema_up(&load_exec->sema);
+
+  /* If load failed, quit. */
+  if (!success)  {
+    palloc_free_page (file_name);
+    process_set_exit_status(-1);
+    thread_exit ();
+  } else {
+    if_.esp = process_args_put_in_stack (file_name, tokens);
+  }
+
+  palloc_free_page (file_name);
+
+  /* Start the user process by simulating a return from an
+     interrupt, implemented by intr_exit (in
+     threads/intr-stubs.S).  Because intr_exit takes all of its
+     arguments on the stack in the form of a `struct intr_frame',
+     we just point the stack pointer (%esp) to our stack frame
+     and jump to it. */
+  asm volatile ("movl %0, %%esp; jmp intr_exit" : : "g" (&if_) : "memory");
+  NOT_REACHED ();
+}
+#+end_src
+
+Con todos estos cambios al menos las pruebas ~exec-missing~ y ~exit~ pasan correctamente.
+
+* Implementación de la llama ~wait~
+
+Recordemos la especificación de ~wait~:
+
+#+begin_quote
+El proceso que invoca esta /syscall/ se bloquea hasta que el proceso identificado con el PID dado termina su ejecución.
+
+Un proceso solo puede hacer ~wait~ sobre procesos que este mismo haya creado directamente mediante la  /syscall/ ~exec~, es decir, es un procesos /hijo/ del proceso en cuestión.
+
+El valor de retorno de ~wait~ debe ser el código de salida (aquel especificado directa o indirectamente mediante la /syscall/ ~exit~) con el que el proceso /hijo/ terminó.
+
+Si el proceso /hijo/ terminó su ejecución antes de su proceso padre llame ~wait~, el proceso padre no se bloquea pero debe recibir el código de salida.
+
+La /syscall/ ~wait~ solo tiene efecto en hijos directos y si se invoca más de una vez sobre el mismo proceso /hijo/, las llamadas subsecuentes no deben de bloquear al proceso y deben de regresar ~-1~.
+
+El /hilo principal/ de /Pintos/ ejecuta la función ~process_wait~ (process.c) para esperar al proceso que ejecuta las pruebas, por el momento dicha función solamente duerme al proceso por ~200~ ticks mediante la función ~timer_sleep~. Es recomendable implementar la /syscall/ ~wait~ utilizando por debajo la función ~process_wait~.
+#+end_quote
+
+Consideraciones:
+1. Cada proceso debe de guardar una referencia de cuales procesos ha creado mediante la /syscall/ ~exec~, como no sabemos cuantos procesos pueden ser creados de estar forma, podemos mantener pista de dichos procesos hijos mediante una lista.
+2. El problema de que un proceso espere a que uno de sus procesos hijos termine (produzca) y este le reporte (produzca) su código de salida, es similar al problema de productor-consumidor que revisamos durante las sesiones de teoría; es decir, puede ser resuelto mediante un semáforo inicializado en ~0~. En este caso tenemos potencialmente múltuples consumidores (procesos hijos) y un único consumidor (el proceso padre), cuantos semáforos necesitamos para resolver este escenario del problema productor-consumirdor?
+3. Un proceso siempre debe de reportar su código de salida a su proceso padre aunque este no haya hecho ~wait~ sobre él, hay que recordar que cuando un proceso termina (~thread_exit ()~ -> ~process_exit ()~) libera la memoria asociada con su /PCB/ (~struct thread~), por lo que no necesariamente es posible que un proceso lea el código de salida de uno de sus procesos hijos si este ya terminó su ejecución.
+4. Para mantener la implementación/solución modular, idealmente todo lo relacionado a la implementación de la solución de ~wait~ debe de quedar en el módulo de procesos de usuario (~process.c~).
+5. Al hilo ~initial_thread~ se le debe también de asociar la meta información necesaria para que este se comporte como cualquier otro proceso de usuario esto se puede llevar a cabo en el módulo de threads (thread.c) mediante la función ~thread_init ()~.
+6. Revisar a conciencia el documento de diseño para comprender qué casos especiales es necesario considerar como parte de la solución a ~wait~.
+
+#+CAPTION: Árbol de procesos
+#+NAME:   fig:1
+[[./assets/process-tree.png]]
+
+Primero definimos la meta información que debemos de almacenar para cada proceso
+#+begin_src c
+  // en process.h
+  struct process {
+    tid_t tid;
+    int exit_status;
+    struct list child_processes;  // lista de procesos hijos (struct user_process) creados mediante la syscall exec
+    struct list_elem elem;        // list_elem para formarse en la lista de procesos hijos del proceso padre de este proceso
+    struct semaphore wait;        // inicializado en cero
+  };
+#+end_src
+
+Como describimos antes al ~initial_thread~ le debemos asociar una instancia de dicha estructura:
+#+begin_src c
+  // en thread.c
+  #ifdef USERPROG
+  static struct process initial_thread_user_process;
+  #endif
+
+  // ...
+
+  void thread_init ()
+  {
+    // ...
+    #ifdef USERPROG
+   initial_thread->user_process = &initial_thread_user_process;
+   // luego asignar un valor inicial a initial_thread_user_process, es decir, un valor inicial para cada uno de sus atributos
+   // por ejemplo: process_init (&initial_thread_user_process, initial_thread->tid);
+   #endif
+  }
+#+end_src
+
+Finalmente como subrutina de ~start_process~ y antes de que el proceso hijo indique al proceso padre si cargó o no exitósamente su ejecutable, debe de inicializar sus metadatos correspondientes a la estructura ~struct process~ agregarse a la lista del procesos hijos (~child_processes~) del proceso que lo creó.
+
+#+begin_src c
+  // en process.c
+  static void
+  start_process (void *start_child_)
+  {
+    // ...
+    success = load (file_name, &if_.eip, &if_.esp);
+
+    struct thread* current = thread_current ();
+    // lo creamos con malloc para que exista fuera del PCB del proceso padre y del proceso hijo.
+    struct process* process = malloc (sizeof (struct process));
+    // luego asignar un valor inicial a process, es decir, un valor inicial para cada uno de sus atributos
+    // por ejemplo: process_init (process, current->tid);
+    // finalmente hay que encolar al procesos actual en la lista de procesos hijos
+    // del proceso que lo creó, por ejemplo
+    // list_push_front (&pointer_to_parent_process->child_processes, &process->elem);
+    // en consecuencia es necesario que start_process reciba como argumento
+    // adicional un pointer al struct user_process del proceso padre
+
+    load_exec->success = success;
+    sema_up(&load_exec->sema);
+    // ...
+  }
+
+  // ...
+  int
+  process_wait (tid_t child_tid)
+  {
+    // TODO: Aquí va la implementación
+    // ...
+  }
+
+  // ...
+
+  void
+  process_exit (void)
+  {
+    // ...
+
+    struct user_process* process = cur->self;
+    // notificar al proceso padre de que este proceso está terminando
+    // por ejemplo : sema_up (&process->wait);
+    // NOTA: recuerda en el fondo el proceso padre está esperando consumir
+    //   el código del salida que el proceso hijo va a producir
+    //   y necesitamos coordinar dicha acción.
+
+    // ...
+
+  }
+
+
+#+end_src
+
+Finalmente invocamos ~process_wait~ desde /syscall.c/
+
+#+begin_src c
+
+// ...
+
+static void
+syscall_handler (struct intr_frame *f UNUSED)
+{
+  // ...
+  switch(syscall) {
+    // ...
+    case SYS_WAIT: {
+      f->eax = wait_wrapper (esp);
+      break;
+    }
+    // ...
+  }
+  // ...
+}
+
+// ...
+
+static int32_t
+wait_wrapper (int32_t* esp)
+{
+  int pid = get_user_int_or_fail ((uint8_t*)esp);
+  return wait(pid);
+}
+
+static int32_t
+wait (int32_t pid)
+{
+   return process_wait(pid);
+}
+#+end_src
