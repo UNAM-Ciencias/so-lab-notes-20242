@@ -127,6 +127,7 @@ Termina el proceso actual de usuario, regresando su status al hilo de Kernel que
     printf("1. -------");
     ......
     printf("2. -------");
+  #+end_src
 *** ¿Que sucede si un ~string~ no aparece en la terminal?
 Es casi seguro que su programa falla antes o se queda atorado en alguna condición que impide ejecutar ~printf()~.
 
