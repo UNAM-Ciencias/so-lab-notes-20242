@@ -1,0 +1,123 @@
+#+title: Practica 05: Pintos - File System Syscalls
+
+* Objetivo de la Práctica 05
+Implementar las llamadas al sistema (~syscalls~) de interacción con el sistema de archivos (~filesystems~). Y denegar la escritura a archivos ejecutables que están siendo usados por otro proceso.
+
+* Llamadas al sistema para manipulación del sistema de archivos.
+** Read
+
+#+begin_src c
+  int read (int fd, void *buffer, unsigned size)
+#+end_src
+
+La llamada ~read~ recibe el identificador de un archivo abierto por el proceso actual (~fd~), un ~buffer~ en donde va a copiar ~size~ bytes del archivo abierto.
+
+Esta llamada regresa un entero ~int~ que representa el numero real de bytes que se pudieron copiar al ~buffer~.
+
+Si por alguna razón la ~read~ no pudo leer el archivo ~fd~, debe de regresar un entero ~-1~. En caso de recibir ~0~, entonces debe de utilizar la función  ~input_getc()~ el numero de veces indicado por ~size~. Esto se debe a que ~input_getc()~ solo lee un carácter a la vez. La definición de ~input_getc()~ se encuentra en ~devices/input.c~
+
+
+** Write
+
+#+begin_src c
+  int write(int fd, const void* buffer, unsigned size)
+#+end_src
+
+Recibe un identificador ~fd~ de un archivo abierto por el proceso y escribe el ~size~ bytes del contenido del ~buffer~. Regresa un entero con el numero real de ~bytes~ que pudo escribir en el archivo ~fd~. En caso de recibir ~1~, debe utilizar la función ~putbuf~ definida en ~lib/kernel/stdio.h~ para escribir el contenido del ~buffer~ en la salida estándar.
+
+** Create
+
+#+begin_src c
+  bool create (const char *file, unsigned initial_size)
+#+end_src
+
+Crea un nuevo archivo llamado ~file~ con un tamaño inicial de ~initial_size~. Regresa ~true~ en caso de tener éxito y ~false~ en caso contrario.
+
+** Remove
+
+#+begin_src c
+  bool remove (const char *file)
+#+end_src
+
+Borra un archivo llamado ~file~ y en caso de tener éxito regresa ~true~, en caso contrario ~false~.
+Esta llamada no se ve afectada si el archivo esta abierto por otro proceso o el mismo. Solo borra el archivo sin importar que.
+
+** Open
+
+#+begin_src c
+  int open (const char *file)
+#+end_src
+
+Abre un archivo llamado ~file~ y regresa un entero no negativo que representa el identificador del archivo (~file descriptor~ también abreviado ~fd~).
+
+Los enteros ~0~ y ~1~ están reservados para la entrada estándar (~stdin~) y la salida estándar (~stdout~) respectivamente, y no deben de ser utilizados para identificar un archivo.
+Esos identificadores deben de ser únicos por proceso.
+
+** Close
+
+#+begin_src c
+  void close (int fd)
+#+end_src
+
+Cierra un archivo con un identificado ~fd~.
+
+** Filesize
+
+#+begin_src c
+  int filesize (int fd)
+#+end_src
+
+Regresa el tamaño del archivo abierto ~fd~ en ~bytes~.
+
+** Seek
+
+#+begin_src c
+  void seek (int fd, unsigned position)
+#+end_src
+
+Cambia la posición del siguiente ~byte~ a leer en el archivo abierto ~fd~.
+
+** Tell
+
+#+begin_src c
+  unsigned tell (int fd)
+#+end_src
+
+Regresa la posición actual del archivo abierto ~fd~ expresado en ~bytes~.
+
+
+* Consideraciones de la implementación
+
+Antes de diseñar una solución para escribir estas funciones debemos de tener en cuenta los requisitos que el problema nos esta imponiendo.
+
+1. Cada proceso solo puede interactuar con los identificadores de archivo (~fd~), que el mismo haya abierto o creado.
+
+2. Un archivo puede ser abierto múltiples veces por diferentes procesos.
+
+3. Las operaciones para manipular los archivos  (~file_*~) son sensibles a las condiciones de carrera. Por lo que es imperativo utilizar algún mecanismo de sincronización de procesos para evitar inconsistencias.
+
+4. Un proceso puede abrir mas de un archivo a la vez, por lo que existe una relación de uno a muchos.
+
+5. Cada vez que se ejecute un programa, se deben de bloquear las escrituras al archivo que contiene al programa (~cmd_line~).
+
+* Funciones auxiliares.
+
+Afortunadamente para esta practica no tenemos que escribir ninguna función que interactué directamente con el sistema de archivos. Pintos ya cuenta con una implementación simple para el sistema de archivos que se encuentra en ~src/filesys/filesys.c~ y ~src/filesys/file.c~.
+
+#+begin_src c
+  bool filesys_create (const char *name, off_t initial_size);
+  struct file *filesys_open (const char *name);
+  bool filesys_remove (const char *name);
+  off_t file_read (struct file *file, void *buffer, off_t size);
+  off_t file_write (struct file *file, const void *buffer, off_t size);
+  off_t file_length (struct file *file);
+  void file_close (struct file *file);
+  void file_seek ( struct file * file , off_t new_pos );
+  off_t file_tell ( struct file * file );
+
+  // Funcion que nos ayuda para ROX (Read only Execute)
+  void file_deny_write (struct file *file);
+#+end_src
+
+Como nos podemos dar cuenta estas funciones auxiliares no trabajan con ningún identificador de archivo (~fd~).
+Con la ayuda de la estructura ~process_open_file~ puede crear un ~wrapper~ que les permita relacionar estos dos datos (~fd~ y ~file~).
